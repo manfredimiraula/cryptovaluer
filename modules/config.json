@@ -1,0 +1,35 @@
+{
+    "coinMarketCap": {
+        "api_key": "7054c057-ee69-4113-8cab-2e2b41a78510",
+        "coin_id" : {
+            "url" : "https://pro-api.coinmarketcap.com/v1/cryptocurrency/map",
+            "parameters" : {
+                "listing_status":"active",
+                "aux":"platform,first_historical_data,last_historical_data,is_active",
+                "start":"1",
+                "sort":"id"
+              },
+            "headers": {
+                "Accepts": "application/json",
+                "X-CMC_PRO_API_KEY": "7054c057-ee69-4113-8cab-2e2b41a78510"
+              }
+        },
+        "currency_id" : {
+            "eur":2790, 
+            "usd": 2781
+        },
+        "unix_start_time": 946684800, 
+        "url": "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/historical?id={coin_id}&convertId={currency_id}&timeStart={unix_start_time}&timeEnd={unix_current_date}"
+    },
+    "HTML_EXTRACTION":{
+        "main_pattern": "timeOpen(.*?)timestamp"
+    },
+    "DATABASE": {
+        "CONNECTION_STRING": "postgresql+psycopg2://{}:{}@{}:{}/postgres",
+        "USERNAME": "manfredi",
+        "PASSWORD": "manfredi",
+        "HOST": "localhost",
+        "PORT": 5432,
+        "DB": "postgres"
+    }
+}
