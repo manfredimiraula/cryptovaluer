@@ -4,6 +4,10 @@ from time import sleep
 from requests import Request, Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 import pandas as pd
+# Postgres DB
+from sqlalchemy import create_engine,  Integer, Numeric, Text
+import psycopg2
+from sqlalchemy.sql.expression import column
 
 
 def read_json(file_path):
@@ -103,5 +107,293 @@ def build_coin_list_table(config, listing_status=None):
     tmp = get_coin_id_list(config, listing_status)["data"]
 
     df = pd.DataFrame.from_dict(tmp)
+    if listing_status is None:
+        df['listing_status'] = "active"
+    else:    
+        df['listing_status'] = listing_status
 
     return df
+
+def build_connection_engine(config, type = 'p'):
+    """
+    Create the PostgresDB connection using config and return the connection object. Based on type we create a psycopg2 engine or SQLAlchemy engine 
+
+    :param -> username
+    :param -> passowrd
+    :param -> host
+    :param -> port
+    :param -> db
+
+    return psycopg2 connection object
+    """
+    username = config.get("DATABASE").get("POSTGRES").get("USERNAME")
+    password = config.get("DATABASE").get("POSTGRES").get("PASSWORD")
+    host = config.get("DATABASE").get("POSTGRES").get("HOST")
+    port = config.get("DATABASE").get("POSTGRES").get("PORT")
+    db = config.get("DATABASE").get("POSTGRES").get("DB")
+    if type == 'p':
+        conn = psycopg2.connect(database=db, user=username,
+                                password=password, host=host, port=port)
+    else:
+        conn = create_engine('postgresql+psycopg2://{}:{}@{}:{}/postgres'
+                           .format(username,
+                                   password,
+                                   host,
+                                   port
+                                   ), echo=False)
+    return conn
+
+def build_table_structure(table_name):
+    """
+    Build the table structure needed for the specific tables
+    """
+    if table_name == "coin_list":
+        table_structure = """(
+                        coin_id int, 
+                        name text, 
+                        symbol text,
+                        slug text,
+                        rank int,
+                        is_active int, 
+                        first_historical_data text, 
+                        last_historical_data text,
+                        platform text,
+                        listing_status text, 
+                        created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+                        updated_at timestamp without time zone DEFAULT NULL)
+        """
+        index_keys = """(coin_id, name, rank)"""
+    if table_name == "historical_coin_data":
+        table_structure = """(
+                        coin_id int,
+                        name text,
+                        rank int,
+                        time_open date, 
+                        time_close date, 
+                        time_high date, 
+                        time_low date, 
+                        open_price float, 
+                        close_price float,
+                        high_price float,
+                        low_price float, 
+                        vol float, 
+                        mrkt_cap float, 
+                        created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+                        updated_at timestamp without time zone DEFAULT NULL)
+        """
+        index_keys = """(coin_id, name, rank)"""
+
+    return table_structure, index_keys
+
+def read_coin_list_from_db(config, table_name, table_schema):
+    """
+    Extract the list of coins from the DB and create the list to extract the historical information.
+
+    :param -> config.json
+
+    return a df of coin id (key) and name,symbol (lst)
+    """
+    conn = build_connection_engine(config)
+    
+    sql = f"select * from {table_schema}.{table_name};"
+    df = pd.read_sql_query(sql, conn)
+    conn = None
+
+    return df
+        
+
+def initialize_db(config, table_name, table_schema):
+    """
+    Function that creates the connection with PostgresDB and initialize the table needed if not present. The table is declared in the appropriate function and passed here.
+
+
+    :param -> table_name (str) the name of the table
+    :param -> table_schema (str) the schema of the table
+    :param -> engine the connection engine
+    :param -> conn the connection to the DB
+
+    return 
+    """
+    conn = build_connection_engine(config)
+    
+    cur = conn.cursor()
+
+    cur.execute(
+        "select * from information_schema.tables where table_name=%s and table_schema = %s", (table_name, table_schema))
+    check = bool(cur.rowcount)
+
+    if check == False:
+        print("Initializing table")
+        table_structure, index_keys = build_table_structure(table_name)
+        #create schema if doesn't exist
+        cur.execute(
+            f"""CREATE SCHEMA IF NOT EXISTS {table_schema} AUTHORIZATION {config.get("DATABASE").get("POSTGRES").get("USERNAME")};"""
+            )
+        # initialize table if doesn't exist
+        cur.execute(
+            f"""
+                DROP TABLE if EXISTS {table_schema}.{table_name};
+                CREATE TABLE IF NOT EXISTS {table_schema}.{table_name} {
+                    table_structure
+                }
+                WITH (
+                        OIDS = FALSE
+                        )
+                        TABLESPACE pg_default;
+                        ALTER TABLE {table_schema}.{table_name}
+                        OWNER to manfredi;
+                        CREATE INDEX {table_name}_pkid ON {table_schema}.{table_name}{index_keys};
+                """
+        )
+
+        conn.commit()  # <--- makes sure the change is shown in the database
+        conn.close()
+        cur.close()
+    else:
+        print('The database is already initialized')
+
+
+def load_to_postgres(config, df, table_name, table_schema):
+    """
+    This function will upload the data extracted from the MCM page from a single coin history to the table. 
+    This is an iterative process, thus we will check the latest data available and append new data
+
+    :param 
+
+    returns
+    """
+    # create the list of entries that are already present at the db
+    conn = build_connection_engine(config)
+    cur = conn.cursor()
+
+    # list for coins
+    if table_name == 'coin_list':
+        cur.execute(
+            "select coin_id, last_historical_data from cryptovaluer.coin_list")
+
+        tmp_df = pd.DataFrame(cur.fetchall(), columns=['coin_id', 'last_historical_data'])
+        coin_id_lst = list(tmp_df.coin_id.unique())
+        latest_hist = list(tmp_df.last_historical_data.unique())
+
+        df['platform'] = df['platform'].astype(str)
+        df.rename(columns = {'id': 'coin_id'}, inplace = True)   
+        
+        try:
+            df = df[~df['coin_id'].isin(coin_id_lst) & ~df['last_historical_data'].isin(latest_hist)]
+        except:
+            print('There is no match in the DB')
+    elif table_name == 'historical_coin_data':
+        cur.execute(
+            "select coin_id, max(time_open) as time_open from cryptovaluer.historical_coin_data group by coin_id")
+
+        tmp_df = pd.DataFrame(cur.fetchall(), columns=['coin_id', 'time_open'])
+        coin_id_lst = list(tmp_df.coin_id.unique())
+        latest_time = list(tmp_df.time_open.unique())
+        
+        try:
+            df = df[~df['coin_id'].isin(coin_id_lst) & ~df['time_open'].isin(latest_time)]
+        except:
+            print('There is no match in the DB')
+    
+    # we load into Postgres table created
+    
+    conn = build_connection_engine(config, 's')
+    df.to_sql(name=table_name,
+               schema=table_schema,
+               con=conn,
+               if_exists='append',
+               index=False,
+               chunksize=1000,
+               method='multi',
+    )
+
+    print('Inserted '+str(len(df))+' rows ' + "in " +
+          str(table_schema) + "." + str(table_name))
+    
+def extracted_data_to_df(main_info, dct_, coin):
+    """
+    This function generates the final pandas DataFrame that will be loaded to Postgres. We store the information contained in the HTML in the final format for the DB table
+
+    :param main_info -> html_extracted data
+    :param dct_
+    :param coin -> this is the row from the coin_list for a specific coin
+
+    returns pandas DataFrame
+    """
+    for date, hist in enumerate(main_info):
+        # date list pos, hist info of single event
+        # optimize text for info extraction
+        tmp = hist.replace('","', ",")
+        tmp = tmp.replace('":"', ",")
+        tmp = tmp.replace('{"', ",")
+        tmp = tmp.replace('":', ",")
+        tmp = tmp.replace(',"', ",")
+        tmp = tmp.replace(",,", ",")
+
+        # split the content on the comas
+        tmp_split = tmp.split(",")
+
+        for i, val in enumerate(tmp_split):
+            if i == 1:
+                dct_["timeOpen"].append(val.replace("''", ""))
+            elif i == 3:
+                dct_["timeClose"].append(val.replace("''", ""))
+            elif i == 5:
+                dct_["timeHigh"].append(val.replace("''", ""))
+            elif i == 7:
+                dct_["timeLow"].append(val.replace("''", ""))
+            elif i == 10:
+                dct_["openPrice"].append(val.replace("''", ""))
+            elif i == 12:
+                dct_["highPrice"].append(val.replace("''", ""))
+            elif i == 14:
+                dct_["lowPrice"].append(val.replace("''", ""))
+            elif i == 16:
+                dct_["closePrice"].append(val.replace("''", ""))
+            elif i == 18:
+                dct_["volume"].append(val.replace("''", ""))
+            elif i == 20:
+                dct_["mrktCap"].append(val.replace("''", ""))
+
+    hist = pd.DataFrame(dict([(col_name,pd.Series(values)) for col_name,values in dct_.items() ]))
+    date_cols = [
+        'timeOpen', 'timeClose', 'timeHigh', 'timeLow' 
+        ]
+    float_cols = [
+        'openPrice', 'closePrice', 'highPrice', 'lowPrice', 'volume', 'mrktCap'
+    ]
+    hist[date_cols] = hist[date_cols].apply(lambda x: pd.to_datetime(x,errors='coerce'))
+    hist[float_cols] = hist[float_cols].astype(float)
+    hist['coin_id'] = coin['coin_id']
+    hist['name'] = coin['name']
+    hist['rank'] = coin['rank']
+    hist = hist[[
+        'coin_id',
+        'name', 
+        'rank', 
+        'timeOpen', 
+        'timeClose', 
+        'timeHigh', 
+        'timeLow', 
+        'openPrice', 
+        'closePrice', 
+        'highPrice', 
+        'lowPrice', 
+        'volume', 
+        'mrktCap'
+        ]]
+    hist.rename(columns={
+        'timeOpen':'time_open', 
+        'timeClose':'time_close', 
+        'timeHigh':'time_high', 
+        'timeLow':'time_low', 
+        'openPrice':'open_price', 
+        'closePrice':'close_price', 
+        'highPrice':'high_price', 
+        'lowPrice':'low_price', 
+        'volume':'vol', 
+        'mrktCap':'mrkt_cap'
+    }, inplace=True)
+
+    return hist
+    

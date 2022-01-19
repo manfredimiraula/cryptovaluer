@@ -25,11 +25,18 @@
         "main_pattern": "timeOpen(.*?)timestamp"
     },
     "DATABASE": {
-        "CONNECTION_STRING": "postgresql+psycopg2://{}:{}@{}:{}/postgres",
-        "USERNAME": "manfredi",
-        "PASSWORD": "manfredi",
-        "HOST": "localhost",
-        "PORT": 5432,
-        "DB": "postgres"
+        "TABLES":{
+            "coin_list_t":"coin_list",
+            "historical_data_t":"historical_coin_data"
+        },
+        "POSTGRES":{
+                "CONNECTION_STRING": "postgresql+psycopg2://manfredi:manfredi@localhost/postgres",
+                "USERNAME": "manfredi",
+                "PASSWORD": "manfredi",
+                "HOST": "localhost",
+                "DB": "postgres", 
+                "PORT":"5432"
+            }, 
+        "MYSQL":{}
     }
 }
