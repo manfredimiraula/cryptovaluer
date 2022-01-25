@@ -27,7 +27,8 @@
     "DATABASE": {
         "TABLES":{
             "coin_list_t":"coin_list",
-            "historical_data_t":"historical_coin_data"
+            "historical_data_t":"historical_coin_data", 
+            "harmonized_data_t":"coin_harmonized_data"
         },
         "POSTGRES":{
                 "CONNECTION_STRING": "postgresql+psycopg2://manfredi:manfredi@localhost/postgres",

@@ -4,7 +4,11 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
-from modules.utils.utils import build_df, build_url, read_json, build_coin_list_table, initialize_db, build_connection_engine, read_coin_list_from_db, load_to_postgres, extracted_data_to_df
+#import sys
+
+
+#sys.path.append(r'/Users/manfredi/projects/analytics/GitHub/cryptovaluer_old/modules/utils')
+from modules.utils.util import build_df, build_url, read_json, build_coin_list_table, initialize_db, read_coin_list_from_db, load_to_postgres, extracted_data_to_df
 from sqlalchemy import text
 
 def run_etl():
