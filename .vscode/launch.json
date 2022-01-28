@@ -9,7 +9,7 @@
       "type": "python",
       "request": "launch",
       "module": "streamlit",
-      "args": ["run", "./modules/webapp/webapp.py"]
+      "args": ["run", "./webapp.py"]
     },
     {
       "name": "ETL pipe",
