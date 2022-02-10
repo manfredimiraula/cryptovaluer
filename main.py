@@ -8,5 +8,5 @@ from modules.etl.post_processing import run_harmonization
 
 #run_etl()
 
-run_harmonization(insert_new_signals = False)
+#run_harmonization(insert_new_signals = True)
 
