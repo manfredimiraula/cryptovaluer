@@ -29,7 +29,7 @@ st.write("""
 """)
 
 
-coin_lst = list(df.coin_id.unique())
+coin_lst = list(df.name.unique())
 signal_cols = [col for col in df.columns if 'doji' in col]
 ma_cols = [col for col in df.columns if any(s in col for s in ['ma_open', 'ma_close'])]
 
